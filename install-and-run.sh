@@ -49,15 +49,43 @@ print_info "Verificando requisitos del sistema..."
 print_step "PASO 1: Verificando Docker..."
 if ! command -v docker &> /dev/null; then
     print_error "Docker no está instalado."
-    print_info "Por favor instala Docker Desktop desde: https://www.docker.com/products/docker-desktop/"
+    OS_NAME="$(uname -s)"
+    if [ "$OS_NAME" = "Linux" ]; then
+        print_info "En Ubuntu/Debian instala Docker Engine: https://docs.docker.com/engine/install/ubuntu/"
+        print_info "Ejemplo: sudo apt update; sudo apt install -y docker.io docker-compose"
+    else
+        print_info "Por favor instala Docker Desktop desde: https://www.docker.com/products/docker-desktop/"
+    fi
     print_info "Después de instalar Docker, reinicia este script."
     exit 1
 fi
 
+# Verificar que el daemon de Docker está activo. En servidores Linux sin GUI intentamos arrancarlo automáticamente con systemctl/service.
 if ! docker info &> /dev/null; then
-    print_error "Docker no está ejecutándose."
-    print_info "Por favor inicia Docker Desktop y vuelve a ejecutar este script."
-    exit 1
+    OS_NAME="$(uname -s)"
+    if [ "$OS_NAME" = "Linux" ]; then
+        print_warning "Docker no está ejecutándose. Intentando iniciar el daemon con systemctl (se requerirá sudo)..."
+        if command -v systemctl >/dev/null 2>&1; then
+            sudo systemctl start docker || true
+            sleep 2
+        else
+            sudo service docker start || true
+            sleep 2
+        fi
+
+        if ! docker info &> /dev/null; then
+            print_error "Docker daemon sigue sin ejecutarse."
+            print_info "Asegúrate de que Docker Engine esté instalado y habilitado en este servidor."
+            print_info "Habilita y arranca el servicio: sudo systemctl enable --now docker"
+            print_info "Si no quieres usar sudo en cada comando, añade tu usuario al grupo docker: sudo usermod -aG docker \$USER" 
+            print_info "Luego cierra sesión y vuelve a entrar o ejecuta: newgrp docker"
+            exit 1
+        fi
+    else
+        print_error "Docker no está ejecutándose."
+        print_info "Por favor inicia Docker Desktop y vuelve a ejecutar este script."
+        exit 1
+    fi
 fi
 print_status "Docker está instalado y funcionando"
 
@@ -143,12 +171,18 @@ print_status "Docker configurado"
 
 # PASO 7: Iniciar Supabase
 print_step "PASO 7: Iniciando Supabase..."
+mkdir -p logs
 supabase stop 2>/dev/null || true
-supabase start > /dev/null 2>&1
-if [ $? -eq 0 ]; then
-    print_status "Supabase iniciado correctamente"
+print_info "Iniciando supabase y registrando salida en logs/supabase-start.log"
+supabase start > logs/supabase-start.log 2>&1 &
+SUPABASE_START_PID=$!
+sleep 5
+if ps -p $SUPABASE_START_PID > /dev/null 2>&1; then
+    print_status "Supabase (proceso $SUPABASE_START_PID) iniciado (ver logs/supabase-start.log para detalles)"
 else
-    print_error "Error al iniciar Supabase"
+    print_error "Error al iniciar Supabase. Revisa logs/supabase-start.log"
+    echo "----- CONTENIDO DE logs/supabase-start.log -----"
+    cat logs/supabase-start.log || true
     exit 1
 fi
 
@@ -157,11 +191,19 @@ print_step "PASO 8: Iniciando Edge Functions..."
 pkill -f "supabase functions" 2>/dev/null || true
 sleep 2
 cd supabase/functions
-supabase functions serve --no-verify-jwt --env-file .env > /dev/null 2>&1 &
+print_info "Iniciando supabase functions y registrando en ../../logs/functions.log"
+supabase functions serve --no-verify-jwt --env-file .env > ../../logs/functions.log 2>&1 &
 FUNCTIONS_PID=$!
 cd ../..
 sleep 3
-print_status "Edge Functions iniciadas"
+if ps -p $FUNCTIONS_PID > /dev/null 2>&1; then
+    print_status "Edge Functions iniciadas (proceso $FUNCTIONS_PID) — ver logs/functions.log para detalles"
+else
+    print_error "Error iniciando Edge Functions. Revisa logs/functions.log"
+    echo "----- CONTENIDO DE logs/functions.log -----"
+    cat logs/functions.log || true
+    exit 1
+fi
 
 # PASO 9: Mostrar información final
 echo ""

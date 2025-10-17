@@ -68,19 +68,64 @@ CREATE TABLE public.incidents (
 );
 
 -- Create orders table (encargos)
-CREATE TABLE public.orders (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  customer_name TEXT NOT NULL,
-  customer_phone TEXT NOT NULL,
-  customer_email TEXT,
-  status order_status NOT NULL DEFAULT 'pending',
-  total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
-  notes TEXT,
-  delivery_date DATE,
-  created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-);
+-- Create orders table (encargos) - idempotent
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='orders'
+  ) THEN
+    CREATE TABLE public.orders (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      customer_name TEXT NOT NULL,
+      customer_phone TEXT NOT NULL,
+      customer_email TEXT,
+      status order_status NOT NULL DEFAULT 'pending',
+      total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+      notes TEXT,
+      delivery_date DATE,
+      created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+    );
+  ELSE
+    -- Table exists: ensure columns exist (add if missing)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='customer_name') THEN
+      ALTER TABLE public.orders ADD COLUMN customer_name TEXT NOT NULL DEFAULT '';
+      ALTER TABLE public.orders ALTER COLUMN customer_name DROP DEFAULT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='customer_phone') THEN
+      ALTER TABLE public.orders ADD COLUMN customer_phone TEXT NOT NULL DEFAULT '';
+      ALTER TABLE public.orders ALTER COLUMN customer_phone DROP DEFAULT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='customer_email') THEN
+      ALTER TABLE public.orders ADD COLUMN customer_email TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='status') THEN
+      ALTER TABLE public.orders ADD COLUMN status order_status NOT NULL DEFAULT 'pending';
+      ALTER TABLE public.orders ALTER COLUMN status DROP DEFAULT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='total_amount') THEN
+      ALTER TABLE public.orders ADD COLUMN total_amount DECIMAL(10,2) NOT NULL DEFAULT 0;
+      ALTER TABLE public.orders ALTER COLUMN total_amount DROP DEFAULT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='notes') THEN
+      ALTER TABLE public.orders ADD COLUMN notes TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='delivery_date') THEN
+      ALTER TABLE public.orders ADD COLUMN delivery_date DATE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='created_by') THEN
+      ALTER TABLE public.orders ADD COLUMN created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='created_at') THEN
+      ALTER TABLE public.orders ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT now();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='orders' AND column_name='updated_at') THEN
+      ALTER TABLE public.orders ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT now();
+    END IF;
+  END IF;
+END
+$$;
 
 -- Create order_items table
 CREATE TABLE public.order_items (
