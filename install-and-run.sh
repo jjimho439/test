@@ -107,23 +107,29 @@ print_status "Node.js $(node --version) está instalado"
 
 # PASO 3: Instalar Supabase CLI si no está
 print_step "PASO 3: Verificando Supabase CLI..."
-SUPABASE_CMD=""
+SUPABASE_CMD_ARRAY=()
 print_info "Buscando Supabase CLI local en node_modules/.bin..."
-if [ -x "./node_modules/.bin/supabase" ]; then
-    SUPABASE_CMD="./node_modules/.bin/supabase"
-    print_status "Supabase CLI encontrado en ./node_modules/.bin"
+if [ -f "./node_modules/.bin/supabase" ] && [ -x "./node_modules/.bin/supabase" ]; then
+    SUPABASE_CMD_ARRAY=("./node_modules/.bin/supabase")
+    print_status "Supabase CLI ejecutable encontrado en ./node_modules/.bin"
 elif command -v supabase &> /dev/null; then
-    SUPABASE_CMD="supabase"
+    SUPABASE_CMD_ARRAY=("supabase")
     print_status "Supabase CLI global disponible"
 else
     print_warning "Supabase CLI no está instalado globalmente ni localmente. Intentando instalar globalmente..."
     npm install -g supabase
-    if [ $? -eq 0 ]; then
-        SUPABASE_CMD="supabase"
+    if [ $? -eq 0 ] && command -v supabase &> /dev/null; then
+        SUPABASE_CMD_ARRAY=("supabase")
         print_status "Supabase CLI instalado globalmente"
     else
-        print_error "Error al instalar Supabase CLI globalmente. Si prefieres instalar localmente ejecuta: npm install supabase y vuelve a ejecutar este script con bash (o usa npx)."
-        exit 1
+        print_warning "Error al instalar Supabase CLI globalmente. Intentando usar 'npx' como fallback..."
+        if command -v npx &> /dev/null; then
+            SUPABASE_CMD_ARRAY=("npx" "supabase")
+            print_status "Usando 'npx supabase' como fallback (no se requiere instalación global)."
+        else
+            print_error "No se encontró 'npx' para usar como fallback. Instala la CLI globalmente con: npm install -g supabase, o instala localmente: npm install supabase"
+            exit 1
+        fi
     fi
 fi
 
@@ -179,9 +185,11 @@ print_status "Docker configurado"
 # PASO 7: Iniciar Supabase
 print_step "PASO 7: Iniciando Supabase..."
 mkdir -p logs
-${SUPABASE_CMD} stop 2>/dev/null || true
+# Ejecutar supabase stop/start usando array para manejar 'npx supabase' correctamente
+print_info "Comando supabase a usar: ${SUPABASE_CMD_ARRAY[*]}"
+"${SUPABASE_CMD_ARRAY[@]}" stop 2>/dev/null || true
 print_info "Iniciando supabase y registrando salida en logs/supabase-start.log"
-${SUPABASE_CMD} start > logs/supabase-start.log 2>&1 &
+"${SUPABASE_CMD_ARRAY[@]}" start > logs/supabase-start.log 2>&1 &
 SUPABASE_START_PID=$!
 sleep 5
 if ps -p $SUPABASE_START_PID > /dev/null 2>&1; then
@@ -199,7 +207,8 @@ pkill -f "supabase functions" 2>/dev/null || true
 sleep 2
 cd supabase/functions
 print_info "Iniciando supabase functions y registrando en ../../logs/functions.log"
-${SUPABASE_CMD} functions serve --no-verify-jwt --env-file .env > ../../logs/functions.log 2>&1 &
+print_info "Comando functions a usar: ${SUPABASE_CMD_ARRAY[*]} functions serve --no-verify-jwt --env-file .env"
+"${SUPABASE_CMD_ARRAY[@]}" functions serve --no-verify-jwt --env-file .env > ../../logs/functions.log 2>&1 &
 FUNCTIONS_PID=$!
 cd ../..
 sleep 3

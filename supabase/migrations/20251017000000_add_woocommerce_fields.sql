@@ -35,11 +35,15 @@ CREATE INDEX IF NOT EXISTS idx_invoices_status ON public.invoices(status);
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies for invoices
+-- Make policies idempotent: drop if they already exist, then create
+DROP POLICY IF EXISTS "Users can view invoices" ON public.invoices;
 CREATE POLICY "Users can view invoices" ON public.invoices
   FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Users can insert invoices" ON public.invoices;
 CREATE POLICY "Users can insert invoices" ON public.invoices
   FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Users can update invoices" ON public.invoices;
 CREATE POLICY "Users can update invoices" ON public.invoices
   FOR UPDATE USING (true);
