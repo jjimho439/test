@@ -107,17 +107,24 @@ print_status "Node.js $(node --version) está instalado"
 
 # PASO 3: Instalar Supabase CLI si no está
 print_step "PASO 3: Verificando Supabase CLI..."
-if ! command -v supabase &> /dev/null; then
-    print_warning "Supabase CLI no está instalado. Instalando..."
+SUPABASE_CMD=""
+print_info "Buscando Supabase CLI local en node_modules/.bin..."
+if [ -x "./node_modules/.bin/supabase" ]; then
+    SUPABASE_CMD="./node_modules/.bin/supabase"
+    print_status "Supabase CLI encontrado en ./node_modules/.bin"
+elif command -v supabase &> /dev/null; then
+    SUPABASE_CMD="supabase"
+    print_status "Supabase CLI global disponible"
+else
+    print_warning "Supabase CLI no está instalado globalmente ni localmente. Intentando instalar globalmente..."
     npm install -g supabase
     if [ $? -eq 0 ]; then
-        print_status "Supabase CLI instalado"
+        SUPABASE_CMD="supabase"
+        print_status "Supabase CLI instalado globalmente"
     else
-        print_error "Error al instalar Supabase CLI"
+        print_error "Error al instalar Supabase CLI globalmente. Si prefieres instalar localmente ejecuta: npm install supabase y vuelve a ejecutar este script con bash (o usa npx)."
         exit 1
     fi
-else
-    print_status "Supabase CLI ya está instalado"
 fi
 
 # PASO 4: Crear archivo .env si no existe
@@ -172,9 +179,9 @@ print_status "Docker configurado"
 # PASO 7: Iniciar Supabase
 print_step "PASO 7: Iniciando Supabase..."
 mkdir -p logs
-supabase stop 2>/dev/null || true
+${SUPABASE_CMD} stop 2>/dev/null || true
 print_info "Iniciando supabase y registrando salida en logs/supabase-start.log"
-supabase start > logs/supabase-start.log 2>&1 &
+${SUPABASE_CMD} start > logs/supabase-start.log 2>&1 &
 SUPABASE_START_PID=$!
 sleep 5
 if ps -p $SUPABASE_START_PID > /dev/null 2>&1; then
@@ -192,7 +199,7 @@ pkill -f "supabase functions" 2>/dev/null || true
 sleep 2
 cd supabase/functions
 print_info "Iniciando supabase functions y registrando en ../../logs/functions.log"
-supabase functions serve --no-verify-jwt --env-file .env > ../../logs/functions.log 2>&1 &
+${SUPABASE_CMD} functions serve --no-verify-jwt --env-file .env > ../../logs/functions.log 2>&1 &
 FUNCTIONS_PID=$!
 cd ../..
 sleep 3
